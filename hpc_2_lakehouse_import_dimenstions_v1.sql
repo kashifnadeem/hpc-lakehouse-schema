@@ -314,7 +314,7 @@ SELECT
     NOW(),
     NULL,
     'HPC',
-    l."externalId",
+    l.id::TEXT,
     l."adminLevel",
     l."parentId",
     'approved',
@@ -337,7 +337,7 @@ INSERT INTO lake.lakedim_metrictype (
 )
 VALUES
     ('inNeed', 'People in need', NOW(), NULL, 'HPC', NULL, 'approved', NOW()),
-    ('targeted', 'People targeted for assistance', NOW(), NULL, 'HPC', NULL, 'approved', NOW()),
+    ('target', 'People targeted for assistance', NOW(), NULL, 'HPC', NULL, 'approved', NOW()),
     ('reached', 'People reached with assistance', NOW(), NULL, 'HPC', NULL, 'approved', NOW());
 
 

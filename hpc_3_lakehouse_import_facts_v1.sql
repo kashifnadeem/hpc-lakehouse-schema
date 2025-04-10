@@ -2,7 +2,7 @@
 -- File:        hpc_3_lakehouse_import_facts_v1.sql
 -- Purpose:     Import cost breakdown facts into lakehouse fact table
 -- Author:      APMB/MATS - Sys&Dev Team
--- Environment: PostgreSQL 14+
+-- Environment: PostgreSQL
 -- ==================================================
 
 -- ***************************************************************
@@ -132,3 +132,172 @@ SELECT
     createdBy,
     createdAt
 FROM final_data;
+
+--------------
+
+-- Extracts caseload data from the source system, maps it to lakehouse dimensions,
+-- and inserts both totals and data matrix metrics as facts into lake.lakefact_x.
+
+WITH raw_data AS (
+    SELECT
+        lp.id AS planId,
+        lf.id AS fieldClusterId,
+        luy.id AS yearId,
+        lgc.id AS globalClusterId,
+        ll.id AS locationId,
+        av.value -> 'metrics' -> 'values' -> 'disaggregated' -> 'dataMatrix' AS data_matrix,
+        av.value -> 'metrics' -> 'values' -> 'totals' AS totals_array
+    FROM public.attachment a
+    JOIN public."attachmentVersion" av 
+        ON a.id = av."attachmentId" AND av."latestVersion" = TRUE
+    JOIN public."governingEntity" ge 
+        ON a."objectId" = ge.id AND ge."latestVersion" = TRUE
+    JOIN public."governingEntityVersion" gev 
+        ON gev."governingEntityId" = ge.id AND gev."latestVersion" = TRUE
+    JOIN public."globalClusterAssociation" gca 
+        ON gca."governingEntityId" = ge.id
+    JOIN public.plan p 
+        ON a."planId" = p.id
+    JOIN public."planVersion" pv 
+        ON pv."planId" = p.id AND pv."latestVersion" = TRUE
+    JOIN public."planYear" py 
+        ON p.id = py."planId"
+    JOIN public."usageYear" uy 
+        ON uy.id = py."usageYearId"
+    LEFT JOIN public.location l 
+        ON l.id = pv."focusLocationId"
+    LEFT JOIN lake.lakedim_location ll 
+        ON ll.sourceId = l."externalId" AND ll.source = 'HPC'
+    JOIN lake.lakedim_plan lp 
+        ON lp.sourceId = p.id::TEXT AND lp.source = 'HPC'
+    JOIN lake.lakedim_fieldcluster lf 
+        ON lf.sourceId = ge.id::TEXT AND lf.source = 'HPC'
+    JOIN lake.lakedim_year luy 
+        ON luy.sourceId = uy.id::TEXT AND luy.source = 'HPC'
+    JOIN lake.lakedim_globalcluster lgc 
+        ON lgc.sourceId = gca."globalClusterId"::TEXT AND lgc.source = 'HPC'
+    WHERE a.type ILIKE 'caseLoad'
+      AND a."objectType" ILIKE 'governingEntity'
+),
+totals_extracted_raw AS (
+    SELECT 
+        rd.planId,
+        rd.fieldClusterId,
+        rd.globalClusterId,
+        rd.locationId,
+        rd.yearId,
+        TRIM(LOWER(total ->> 'type')) AS metric_name,
+        (total ->> 'value') AS raw_value
+    FROM raw_data rd,
+         jsonb_array_elements(rd.totals_array) AS total
+),
+data_matrix_extracted_raw AS (
+    SELECT 
+        rd.planId,
+        rd.fieldClusterId,
+        rd.globalClusterId,
+        rd.locationId,
+        rd.yearId,
+        TRIM(LOWER(dm ->> 'metricType')) AS metric_name,
+        (dm ->> 'value') AS raw_value
+    FROM raw_data rd,
+         jsonb_array_elements(rd.data_matrix) AS dm
+),
+metric_lookup AS (
+    SELECT id AS metricTypeId, TRIM(LOWER(name)) AS metric_name
+    FROM lake.lakedim_metrictype
+    WHERE source = 'HPC'
+),
+totals_cleaned AS (
+    SELECT
+        t.planId,
+        t.fieldClusterId,
+        t.globalClusterId,
+		t.locationId,
+        t.yearId,
+        m.metricTypeId,
+        'HPC' AS sourceType,
+        t.raw_value::NUMERIC AS valueNum
+    FROM totals_extracted_raw t
+    LEFT JOIN metric_lookup m ON t.metric_name = m.metric_name
+    WHERE t.raw_value ~ '^-?[0-9]+(\.[0-9]+)?$'
+),
+data_matrix_cleaned AS (
+    SELECT
+        d.planId,
+        d.fieldClusterId,
+        d.globalClusterId,
+        d.locationId,
+        d.yearId,
+        m.metricTypeId,
+        'HPC' AS sourceType,
+        d.raw_value::NUMERIC AS valueNum
+    FROM data_matrix_extracted_raw d
+    LEFT JOIN metric_lookup m ON d.metric_name = m.metric_name
+    WHERE d.raw_value ~ '^-?[0-9]+(\.[0-9]+)?$'
+)
+-- Final insert into lake.lakefact_x
+INSERT INTO lake.lakefact_x (
+    planId,
+    fieldClusterId,
+    globalClusterId,
+    yearId,
+	locationId,
+    metricTypeId,
+    factType,
+    sourceType,
+    valueNum,
+    valueStr,
+    valueDate,
+    valueObject,
+    effectiveFrom,
+    effectiveTo,
+    source,
+    sourceId,
+    dataStatus,
+    createdBy,
+    createdAt
+)
+SELECT 
+    planId,
+    fieldClusterId,
+    globalClusterId,
+    yearId,
+	locationId,
+    metricTypeId,
+    'CaseLoad',
+    sourceType,
+    valueNum,
+    NULL::VARCHAR,
+    NULL::DATE,
+    NULL::JSONB,
+    NOW(),
+    NULL::TIMESTAMP,
+    'HPC',
+    planId::TEXT,
+    'approved',
+    'SYSTEM',
+    NOW()
+FROM totals_cleaned
+UNION ALL
+SELECT 
+    planId,
+    fieldClusterId,
+    globalClusterId,
+    yearId,
+	locationId,
+    metricTypeId,
+    'CaseLoad',
+    sourceType,
+    valueNum,
+    NULL::VARCHAR,
+    NULL::DATE,
+    NULL::JSONB,
+    NOW(),
+    NULL::TIMESTAMP,
+    'HPC',
+    planId::TEXT,
+    'approved',
+    'SYSTEM',
+    NOW()
+FROM data_matrix_cleaned;
