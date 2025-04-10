@@ -1,4 +1,34 @@
--- Insert HPC Plans
+-- ==================================================
+-- File:        hpc_2_lakehouse_import_dimenstions_v1.sql
+-- Purpose:     Import HPC dimension data into the lakehouse schema
+-- Author:      APMB/MATS - Sys&Dev Team
+-- Environment: PostgreSQL
+-- ==================================================
+
+-- ***************************************************************
+-- Script Description:
+-- This ETL script is intended for initializing dimension tables
+-- in the `lake` schema using authoritative data from the HPC system.
+-- The data includes plans, organizations, demographic categories,
+-- clusters, projects, and classification types (metric/caseload).
+--
+-- The data imported here forms the basis for dimension joins and 
+-- lookups in fact table operations.
+--
+-- NOTE:
+-- - This script is HPC-specific; for another data source, a tailored
+--   ingestion script should be prepared.
+-- - No DELETE or UPDATE operations are performed in this script.
+--
+-- ***************************************************************
+-- How to run:
+-- 1. Open your SQL editor, connect to the hpc database that contains the `lake` schema.
+-- 2. Make sure the `lake` schema and its tables are already created, if not use the hpc_1_lakehouse_schema_v1.sql
+-- 3. Copy and run the entire script from this file.
+-- 4. Verify successful completion by querying any of the `lake.lakedim_*` tables.
+-- ***************************************************************
+
+
 INSERT INTO lake.lakedim_plan (
     name,
     effectiveFrom,

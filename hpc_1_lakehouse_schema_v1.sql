@@ -1,9 +1,8 @@
 -- ==================================================
 -- File:       hpc_lakehouse_schema_v1.sql
 -- Purpose:    Define HPC lakehouse schema & tables
--- Author:     APM/MATS - Sys&Dev Team
+-- Author:     APMB/MATS - Sys&Dev Team
 -- Created:    2025-04-10
--- Environment: PostgreSQL 14+
 -- Notes:      Executed in HPC db 'lake' schema
 -- ==================================================
 
